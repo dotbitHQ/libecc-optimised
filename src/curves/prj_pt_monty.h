@@ -28,4 +28,7 @@ void prj_pt_mul_monty(prj_pt_t out, nn_src_t m, prj_pt_src_t in);
 
 int prj_pt_mul_monty_blind(prj_pt_t out, nn_src_t m, prj_pt_src_t in, nn_t b, nn_src_t q);
 
+/* m * in1 + n * in2 using wNAF */
+void prj_pt_ec_mult_wnaf(prj_pt_t out, nn_src_t m, prj_pt_src_t in1, nn_src_t n, prj_pt_src_t in2);
+
 #endif /* __PRJ_PT_MONTY_H__ */

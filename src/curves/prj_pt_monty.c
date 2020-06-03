@@ -789,3 +789,162 @@ int prj_pt_mul_monty_blind(prj_pt_t out, nn_src_t m, prj_pt_src_t in, nn_t b, nn
 	nn_zero(b);
 	return 0;
 }
+
+/*
+precomp points = [1, 3, 5, 2n + 1,....2^(w-1)] multiply point in
+*/
+void get_pre_comp_points(prj_pt_t pre_comp, prj_pt_src_t in, int size){
+
+	prj_pt in2;
+
+	prj_pt_copy(&pre_comp[0], in);
+	prj_pt_dbl_monty(&in2, in);
+
+	int n = 1;
+	while (n < size){
+		prj_pt_add_monty(&pre_comp[n], &pre_comp[n - 1], &in2);
+		n++;
+	}
+
+	prj_pt_uninit(&in2);
+}
+
+int ecmult_wnaf(int * wnag, nn_src_t m, int window){
+
+	nn temp, temp2, w2exp, w2exp1;
+	nn_init(&temp, 4);
+	nn_init(&temp2, 4);
+	nn_init(&w2exp, 4);
+	nn_init(&w2exp1, 4);
+
+	nn_set_word_value(&w2exp, 1 << window);
+	nn_set_word_value(&w2exp1, 1 << (window - 1));
+
+	nn_copy(&temp, m);
+	int n = 0;
+
+	while(nn_cmp_word(&temp, 0) > 0){
+		if (nn_isodd(&temp)){
+
+			nn_mod(&temp2, &temp, &w2exp);
+			if(nn_cmp(&temp2, &w2exp1) > 0){
+				*(wnag + n) = temp2.val[0] - (1 << window);
+
+				nn_add(&temp, &temp, &w2exp);
+				nn_sub(&temp, &temp, &temp2);
+			} else {
+				*(wnag + n) = temp2.val[0];
+				nn_sub(&temp, &temp, &temp2);
+			}
+
+		}else{
+			*(wnag + n) = 0;
+		}
+		nn_rshift(&temp, &temp, 1);
+		n++;
+	}
+	nn_uninit(&temp);
+	nn_uninit(&temp2);
+	nn_uninit(&w2exp);
+	nn_uninit(&w2exp1);
+
+	return n;
+}
+
+void prj_pt_ec_mult_wnaf(prj_pt_t out, nn_src_t m, prj_pt_src_t in1, nn_src_t n, prj_pt_src_t in2)
+{
+	// calculate precomputation for in1 and in2
+	int window = 5;
+	int pre_comp_size = 1 << (window - 2);
+
+	// ext_printf("window size %d\n", window);
+	// ext_printf("pre_comp_size %d\n", pre_comp_size);
+
+	prj_pt neg_pt;
+	prj_pt pre_comp_m[pre_comp_size];
+	prj_pt pre_comp_n[pre_comp_size];
+
+	nn mr, nr;
+
+	// prj_pt_init(&neg_pt, in2->crv);
+	int m_wnag[512], n_wnag[512];
+
+	get_pre_comp_points(pre_comp_m, in1, pre_comp_size);
+	get_pre_comp_points(pre_comp_n, in2, pre_comp_size);
+
+
+	nn_mod(&mr, m, &(in1->crv->order));
+	nn_mod(&nr, n, &(in2->crv->order));
+
+
+	bitcnt_t m_bit_len = ecmult_wnaf(m_wnag, &mr, window);
+	bitcnt_t n_bit_len = ecmult_wnaf(n_wnag, &nr, window);
+	// bitcnt_t m_bit_len = nn_bitlen(m);
+	// bitcnt_t n_bit_len = nn_bitlen(n);
+
+	bitcnt_t bit_len = m_bit_len > n_bit_len ? m_bit_len : n_bit_len;
+
+	// ext_printf("bit_len = %d\n", bit_len);
+
+
+
+	prj_pt_init(&neg_pt, in1->crv);
+	prj_pt_init(out, in1->crv);
+	// out->X = in2->X;
+	// prj_pt_init(out, in2->crv);
+	prj_pt_zero(out);
+
+	int i;
+
+	int no;
+	for (i = bit_len - 1; i >= 0; i--)
+	{
+	// 	// ext_printf("loop %d\n", i);
+		prj_pt_dbl_monty(out, out);
+
+		if (i < m_bit_len)
+		{
+			no = m_wnag[i];
+			// ext_printf("m_wnag[i] = %d \n", no);
+			if (no > 0)
+			{
+				prj_pt_add_monty(out, out, &pre_comp_m[(no-1)/2]);
+			}
+			else if (no < 0)
+			{
+				//get negative pre_comp_m, then add
+				prj_pt_copy(&neg_pt, &pre_comp_m[(-no-1)/2]);
+				fp_neg(&(neg_pt.Y), &(neg_pt.Y));
+
+				prj_pt_add_monty(out, out, &neg_pt);
+			}
+		}
+
+		if (i < n_bit_len)
+		{
+			no = n_wnag[i];
+			// ext_printf("n_wnag[i] = %d \n", no);
+			if (no > 0)
+			{
+				prj_pt_add_monty(out, out, &pre_comp_n[(no-1)/2]);
+			}
+			else if (no < 0)
+			{
+				//get negative pre_comp_m, then add
+				prj_pt_copy(&neg_pt, &pre_comp_n[(-no-1)/2]);
+				fp_neg(&(neg_pt.Y), &(neg_pt.Y));
+
+				prj_pt_add_monty(out, out, &neg_pt);
+			}
+		}
+	}
+
+	nn_uninit(&mr);
+	nn_uninit(&nr);
+	prj_pt_uninit(&neg_pt);
+	for (i = 0; i < pre_comp_size; i++)
+	{
+		prj_pt_uninit(&pre_comp_m[i]);
+		prj_pt_uninit(&pre_comp_n[i]);
+	}
+}

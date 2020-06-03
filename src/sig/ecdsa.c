@@ -575,9 +575,19 @@ int _ecdsa_verify_finalize(struct ec_verify_context *ctx)
 	nn_uninit(&tmp);
 
 	/* 7. Compute W' = uG + vY */
-	prj_pt_mul_monty(&uG, &u, G);
-	prj_pt_mul_monty(&vY, &v, Y);
-	prj_pt_add_monty(&W_prime, &uG, &vY);
+	// prj_pt_mul_monty(&uG, &u, G);
+	// prj_pt_mul_monty(&vY, &v, Y);
+	// prj_pt_add_monty(&W_prime, &uG, &vY);
+	// dbg_ec_point_print("W_prime = uG + vY", &W_prime);
+
+	// prj_pt_ec_mult_wnaf(&W_prime, &u, G, &v, Y);
+	// dbg_ec_point_print("W_prime1 = uG + vY", &W_prime);
+	prj_pt_copy(&uG, G);
+	prj_pt_copy(&vY, Y);
+	// prj_pt_copy(&W_prime, Y);
+	// prj_pt_uninit(&W_prime);
+	prj_pt_ec_mult_wnaf(&W_prime, &u, G, &v, Y);
+
 	prj_pt_uninit(&uG);
 	prj_pt_uninit(&vY);
 	nn_uninit(&u);
