@@ -790,6 +790,194 @@ int prj_pt_mul_monty_blind(prj_pt_t out, nn_src_t m, prj_pt_src_t in, nn_t b, nn
 	return 0;
 }
 
+static void _jprj_pt_dbl_monty(prj_pt_t out, prj_pt_src_t in){
+
+	// ext_printf("_jprj_pt_dbl_monty\n");
+
+	prj_pt_init(out, in->crv);
+	if(prj_pt_iszero(in)){
+		prj_pt_zero(out);
+		return;
+	}
+
+	fp x2, x4, y2, y4, z2;
+	fp_init(&x2, out->crv->a.ctx);
+	fp_init(&x4, out->crv->a.ctx);
+	fp_init(&y2, out->crv->a.ctx);
+	fp_init(&y4, out->crv->a.ctx);
+	fp_init(&z2, out->crv->a.ctx);
+
+	/* x2 = 3x^2 */
+
+	fp_mul_monty(&z2, &in->Z, &in->Z);
+
+	// fp_mul_monty(&z2, &z2, &z2);
+	// fp_mul_monty(&z2, &z2, &out->crv->a_monty);
+	// fp_mul_monty(&x2, &in->X, &in->X);
+	// fp_add_monty(&x4, &x2, &x2);
+	// fp_add_monty(&x2, &x4, &x2);
+	// fp_add_monty(&x2, &x2, &z2);
+
+	/* M = 3*(X1-Z12)*(X1+Z12) */
+	fp_add_monty(&x2, &in->X, &z2);
+	fp_sub_monty(&x4, &in->X, &z2);
+	fp_mul_monty(&x2, &x2, &x4);
+	fp_add_monty(&x4, &x2, &x2);
+	fp_add_monty(&x2, &x4, &x2);
+
+
+
+	/* M^2 */
+	fp_mul_monty(&x4, &x2, &x2);
+
+	// 2y^2
+	fp_mul_monty(&y2, &in->Y, &in->Y);
+	fp_add_monty(&y2, &y2, &y2);
+
+	// y4 = 8y^4
+	fp_mul_monty(&y4, &y2, &y2);
+	fp_add_monty(&y4, &y4, &y4);
+
+	// y2 = 4y^2
+	fp_add_monty(&y2, &y2, &y2);
+	
+	/* S = 4xy^2   */
+	fp_mul_monty(&y2, &y2, &in->X);
+
+	/* X = T = M^2 - 2*s */
+	fp_sub_monty(&out->X, &x4, &y2);
+	fp_sub_monty(&out->X, &out->X, &y2);
+
+	/* Y3 = M*(S-T)-8*y^4 */
+	fp_sub_monty(&out->Y, &y2, &out->X);
+	fp_mul_monty(&out->Y, &out->Y, &x2);
+	fp_sub_monty(&out->Y, &out->Y, &y4);
+
+	fp_mul_monty(&out->Z, &in->Z, &in->Y);
+	fp_add_monty(&out->Z, &out->Z, &out->Z);
+
+	fp_uninit(&x2);
+	fp_uninit(&x4);
+	fp_uninit(&y2);
+	fp_uninit(&y4);
+	fp_uninit(&z2);
+}
+
+static void jprj_pt_dbl_monty(prj_pt_t out, prj_pt_src_t in){
+	if (out == in) {
+		prj_pt out_cpy;
+		prj_pt_init(&out_cpy, out->crv);
+		prj_pt_copy(&out_cpy, out);
+		_jprj_pt_dbl_monty(&out_cpy, in);
+		prj_pt_copy(out, &out_cpy);
+		prj_pt_uninit(&out_cpy);
+	} else {
+		_jprj_pt_dbl_monty(out, in);
+	}
+}
+
+
+static void _jprj_pt_add_monty(prj_pt_t out, prj_pt_src_t in1, prj_pt_src_t in2){
+
+	// ext_printf("_jprj_pt_add_monty\n");
+
+	// ext_printf("enter in jprj_pt_add_monty");
+
+	MUST_HAVE(in1->crv == in2->crv);
+	prj_pt_init(out, in1->crv);
+	if(prj_pt_iszero(in1)){
+		prj_pt_copy(out, in2);
+		return;
+	}
+
+	if(prj_pt_iszero(in2)){
+		prj_pt_copy(out, in1);
+		return;
+	}
+
+
+	fp u1, u2, s1, s2, tz1, tz2, h, r, r2, h2, h3;
+
+	fp_init(&u1, out->crv->a.ctx);
+	fp_init(&u2, out->crv->a.ctx);
+	fp_init(&s1, out->crv->a.ctx);
+	fp_init(&s2, out->crv->a.ctx);
+	fp_init(&tz1, out->crv->a.ctx);
+	fp_init(&tz2, out->crv->a.ctx);
+	fp_init(&h, out->crv->a.ctx);
+	fp_init(&r, out->crv->a.ctx);
+	fp_init(&r2, out->crv->a.ctx);
+	fp_init(&h2, out->crv->a.ctx);
+	fp_init(&h3, out->crv->a.ctx);
+
+	fp_mul_monty(&tz1, &in1->Z, &in1->Z);
+	fp_mul_monty(&tz2, &in2->Z, &in2->Z);
+
+	fp_mul_monty(&u1, &in1->X, &tz2);
+	fp_mul_monty(&u2, &in2->X, &tz1);
+
+	fp_mul_monty(&tz1, &tz1, &in1->Z);
+	fp_mul_monty(&tz2, &tz2, &in2->Z);
+
+	fp_mul_monty(&s1, &in1->Y, &tz2);
+	fp_mul_monty(&s2, &in2->Y, &tz1);
+
+	fp_sub_monty(&h, &u2, &u1);
+	fp_sub_monty(&r, &s2, &s1);
+
+	if(fp_iszero(&h) && fp_iszero(&r)){
+
+		// ext_printf("_jprj_pt_add_monty zero\n");
+		jprj_pt_dbl_monty(out, in1);
+	}else{
+		fp_mul_monty(&r2, &r, &r);
+		fp_mul_monty(&h2, &h, &h);
+		fp_mul_monty(&h3, &h2, &h);
+
+		fp_mul_monty(&u1, &u1, &h2);
+
+		fp_sub_monty(&out->X, &r2, &h3);
+		fp_sub_monty(&out->X, &out->X, &u1);
+		fp_sub_monty(&out->X, &out->X, &u1);
+
+		fp_mul_monty(&s1, &s1, &h3);
+
+		fp_sub_monty(&out->Y, &u1, &out->X);
+		fp_mul_monty(&out->Y, &out->Y, &r);
+		fp_sub_monty(&out->Y, &out->Y, &s1);
+
+		fp_mul_monty(&out->Z, &in1->Z, &in2->Z);
+		fp_mul_monty(&out->Z, &out->Z, &h);
+	}
+
+	fp_uninit(&u1);
+	fp_uninit(&u2);
+	fp_uninit(&s1);
+	fp_uninit(&s2);
+	fp_uninit(&tz1);
+	fp_uninit(&tz2);
+	fp_uninit(&h);
+	fp_uninit(&r);
+	fp_uninit(&r2);
+	fp_uninit(&h2);
+	fp_uninit(&h3);
+	// ext_printf("_jprj_pt_add_monty end\n");
+}
+
+
+static void jprj_pt_add_monty(prj_pt_t out, prj_pt_src_t in1, prj_pt_src_t in2){
+	if ((out == in1) || (out == in2)) {
+		prj_pt out_cpy;
+		prj_pt_init(&out_cpy, out->crv);
+		prj_pt_copy(&out_cpy, out);
+		_jprj_pt_add_monty(&out_cpy, in1, in2);
+		prj_pt_copy(out, &out_cpy);
+		prj_pt_uninit(&out_cpy);
+	} else {
+		_jprj_pt_add_monty(out, in1, in2);
+	}
+}
+
 /*
 precomp points = [1, 3, 5, 2n + 1,....2^(w-1)] multiply point in
 */
@@ -798,11 +986,11 @@ void get_pre_comp_points(prj_pt_t pre_comp, prj_pt_src_t in, int size){
 	prj_pt in2;
 
 	prj_pt_copy(&pre_comp[0], in);
-	prj_pt_dbl_monty(&in2, in);
+	jprj_pt_dbl_monty(&in2, in);
 
 	int n = 1;
 	while (n < size){
-		prj_pt_add_monty(&pre_comp[n], &pre_comp[n - 1], &in2);
+		jprj_pt_add_monty(&pre_comp[n], &pre_comp[n - 1], &in2);
 		n++;
 	}
 
@@ -851,8 +1039,48 @@ int ecmult_wnaf(int * wnag, nn_src_t m, int window){
 	return n;
 }
 
-void prj_pt_ec_mult_wnaf(prj_pt_t out, nn_src_t m, prj_pt_src_t in1, nn_src_t n, prj_pt_src_t in2)
+
+void prj_pt_ec_mult_wnaf(prj_pt_t out, nn_src_t m, prj_pt_src_t in11, nn_src_t n, prj_pt_src_t in3)
 {
+
+	prj_pt in22, in111;
+	prj_pt_t in2, in1;
+
+	in2 = &in22;
+	in1 = &in111;
+	prj_pt_init(in2, in3->crv);
+	prj_pt_init(in1, in3->crv);
+
+	prj_pt_copy(in1, in11);
+	prj_pt_copy(in2, in3);
+
+	// fp inv;
+	// fp_init(&inv, in3->crv->a.ctx);
+	// fp_inv(&inv, &in3->Z);
+
+	// fp_mul(&(in2)->X, &in3->X, &inv);
+	// fp_mul(&(in2)->Y, &in3->Y, &inv);
+	// fp_one(&(in2)->Z);
+
+	// fp_uninit(&inv);
+
+	fp_redcify(&in1->X, &in1->X);
+	fp_redcify(&in1->Y, &in1->Y);
+	fp_redcify(&in1->Z, &in1->Z);
+
+	fp_redcify(&in2->X, &in2->X);
+	fp_redcify(&in2->Y, &in2->Y);
+	fp_redcify(&in2->Z, &in2->Z);
+
+	// dbg_ec_point_print("in1", in1);
+	// dbg_nn_print("in1 X", &in1->X.fp_val);
+	// dbg_nn_print("in1 Y", &in1->Y.fp_val);
+	// dbg_nn_print("in1 Z", &in1->Z.fp_val);
+
+	// dbg_nn_print("in2 X", &in2->X.fp_val);
+	// dbg_nn_print("in2 Y", &in2->Y.fp_val);
+	// dbg_nn_print("in2 Z", &in2->Z.fp_val);
+
 	// calculate precomputation for in1 and in2
 	int window = 5;
 	int pre_comp_size = 1 << (window - 2);
@@ -893,14 +1121,20 @@ void prj_pt_ec_mult_wnaf(prj_pt_t out, nn_src_t m, prj_pt_src_t in1, nn_src_t n,
 	// out->X = in2->X;
 	// prj_pt_init(out, in2->crv);
 	prj_pt_zero(out);
+	// prj_pt_copy(out, in1);
+
+	// dbg_ec_point_print("out", out);
 
 	int i;
 
 	int no;
 	for (i = bit_len - 1; i >= 0; i--)
 	{
-	// 	// ext_printf("loop %d\n", i);
-		prj_pt_dbl_monty(out, out);
+		// ext_printf("loop %d\n", i);
+		jprj_pt_dbl_monty(out, out);
+		// if(!prj_pt_iszero(out)){
+		// 	dbg_ec_point_print("out", out);
+		// }
 
 		if (i < m_bit_len)
 		{
@@ -908,7 +1142,7 @@ void prj_pt_ec_mult_wnaf(prj_pt_t out, nn_src_t m, prj_pt_src_t in1, nn_src_t n,
 			// ext_printf("m_wnag[i] = %d \n", no);
 			if (no > 0)
 			{
-				prj_pt_add_monty(out, out, &pre_comp_m[(no-1)/2]);
+				jprj_pt_add_monty(out, out, &pre_comp_m[(no-1)/2]);
 			}
 			else if (no < 0)
 			{
@@ -916,7 +1150,7 @@ void prj_pt_ec_mult_wnaf(prj_pt_t out, nn_src_t m, prj_pt_src_t in1, nn_src_t n,
 				prj_pt_copy(&neg_pt, &pre_comp_m[(-no-1)/2]);
 				fp_neg(&(neg_pt.Y), &(neg_pt.Y));
 
-				prj_pt_add_monty(out, out, &neg_pt);
+				jprj_pt_add_monty(out, out, &neg_pt);
 			}
 		}
 
@@ -926,7 +1160,7 @@ void prj_pt_ec_mult_wnaf(prj_pt_t out, nn_src_t m, prj_pt_src_t in1, nn_src_t n,
 			// ext_printf("n_wnag[i] = %d \n", no);
 			if (no > 0)
 			{
-				prj_pt_add_monty(out, out, &pre_comp_n[(no-1)/2]);
+				jprj_pt_add_monty(out, out, &pre_comp_n[(no-1)/2]);
 			}
 			else if (no < 0)
 			{
@@ -934,10 +1168,29 @@ void prj_pt_ec_mult_wnaf(prj_pt_t out, nn_src_t m, prj_pt_src_t in1, nn_src_t n,
 				prj_pt_copy(&neg_pt, &pre_comp_n[(-no-1)/2]);
 				fp_neg(&(neg_pt.Y), &(neg_pt.Y));
 
-				prj_pt_add_monty(out, out, &neg_pt);
+				jprj_pt_add_monty(out, out, &neg_pt);
 			}
 		}
+
 	}
+
+	fp_unredcify(&out->X, &out->X);
+	fp_unredcify(&out->Y, &out->Y);
+	fp_unredcify(&out->Z, &out->Z);
+
+	fp zinv2, zinv3;
+	fp_init(&zinv2, out->crv->a.ctx);
+	fp_init(&zinv3, out->crv->a.ctx);
+
+	fp_inv(&zinv3, &out->Z);
+	fp_mul(&zinv2, &zinv3, &zinv3);
+	fp_mul(&zinv3, &zinv3, &zinv2);
+	fp_mul(&out->X, &out->X, &zinv2);
+	fp_mul(&out->Y, &out->Y, &zinv3);
+	fp_one(&out->Z);
+
+	fp_uninit(&zinv2);
+	fp_uninit(&zinv3);
 
 	nn_uninit(&mr);
 	nn_uninit(&nr);
@@ -947,4 +1200,7 @@ void prj_pt_ec_mult_wnaf(prj_pt_t out, nn_src_t m, prj_pt_src_t in1, nn_src_t n,
 		prj_pt_uninit(&pre_comp_m[i]);
 		prj_pt_uninit(&pre_comp_n[i]);
 	}
+
+	prj_pt_uninit(in1);
+	prj_pt_uninit(in2);
 }
