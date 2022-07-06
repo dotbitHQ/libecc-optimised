@@ -4,7 +4,7 @@ include $(ROOT_DIR)/common.mk
 
 CFLAGS += -I$(ROOT_DIR)/src/ -I$(ROOT_DIR)/src/external_deps
 
-all:	nn_example fp_example curve_basic_examples curve_ecdh
+all:	nn_example fp_example curve_basic_examples curve_ecdh curve_ecdsa
 ifeq ($(WITH_DYNAMIC_LIBS),1)
 # If the user asked for dynamic libraries, compile versions of our binaries against them
 all:	nn_example_dyn fp_example_dyn curve_basic_examples_dyn curve_ecdh_dyn
@@ -20,6 +20,8 @@ curve_basic_examples:
 	$(CC) $(BIN_CFLAGS) -DCURVE_BASIC_EXAMPLES fp_square_residue.c curve_basic_examples.c $(ROOT_DIR)/src/external_deps/print.c $(ROOT_DIR)/src/external_deps/rand.c $(ROOT_DIR)/src/external_deps/time.c $(LIBEC) $(BIN_LDFLAGS) -o curve_basic_examples
 curve_ecdh:
 	$(CC) $(BIN_CFLAGS) -DCURVE_ECDH curve_ecdh.c $(ROOT_DIR)/src/external_deps/print.c $(ROOT_DIR)/src/external_deps/rand.c $(BIN_LDFLAGS) $(LIBEC) -o curve_ecdh
+curve_ecdsa:
+	$(CC) $(BIN_CFLAGS) -DCURVE_ECDSA curve_ecdsa.c $(ROOT_DIR)/src/external_deps/print.c $(ROOT_DIR)/src/external_deps/rand.c $(ROOT_DIR)/src/external_deps/time.c $(LIBEC) $(LIBSIGN) $(BIN_LDFLAGS) -o curve_ecdsa
 
 # If the user asked for dynamic libraries, compile versions of our binaries against them
 ifeq ($(WITH_DYNAMIC_LIBS),1)
