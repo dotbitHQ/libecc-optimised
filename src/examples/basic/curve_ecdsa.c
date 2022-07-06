@@ -41,13 +41,17 @@ typedef struct {
 } ec_test_case;
 
 typedef enum {
-  TEST_KEY_IMPORT_ERROR = 1,
-  TEST_SIG_ERROR = 2,
-  TEST_SIG_COMP_ERROR = 3,
-  TEST_VERIF_ERROR = 4,
-  TEST_ECDH_ERROR = 5,
-  TEST_ECDH_COMP_ERROR = 6,
+  ERROR_KEY_IMPORT = 1,
+  ERROR_SIG = 2,
+  ERROR_SIG_COMP = 3,
+  ERROR_VERIF = 4,
+  ERROR_ECDH = 5,
+  ERROR_ECDH_COMP = 6,
 } test_err_kind;
+
+static const ec_alg_type SIG_ALGO = DECDSA;
+static const hash_alg_type HASH_ALGO = SHA256;
+static ec_params EC_PARAMS;
 
 static const u8 decdsa_rfc6979_SECP256R1_SHA256_0_test_vector_expected_sig[] = {
     0xef, 0xd4, 0x8b, 0x2a, 0xac, 0xb6, 0xa8, 0xfd, 0x11, 0x40, 0xdd,
@@ -69,30 +73,52 @@ static const ec_test_case decdsa_rfc6979_SECP256R1_SHA256_0_test_case = {
     .priv_key_len =
         sizeof(decdsa_rfc6979_SECP256R1_SHA256_0_test_vector_priv_key),
     .nn_random = NULL,
-    .hash_type = SHA256,
+    .hash_type = HASH_ALGO,
     .msg = "sample",
     .msglen = 6,
-    .sig_type = DECDSA,
+    .sig_type = SIG_ALGO,
     .exp_sig = decdsa_rfc6979_SECP256R1_SHA256_0_test_vector_expected_sig,
     .exp_siglen =
         sizeof(decdsa_rfc6979_SECP256R1_SHA256_0_test_vector_expected_sig),
     .adata = NULL,
     .adata_len = 0};
 
-ATTRIBUTE_WARN_UNUSED_RET static int ec_test_verify(u8 *sig, u8 siglen,
-                                                    const ec_pub_key *pub_key,
-                                                    const ec_test_case *c) {
+ATTRIBUTE_WARN_UNUSED_RET static int
+secp256r1_verify_signature(u8 *sig, u8 siglen, const ec_pub_key *pub_key,
+                           const u8 *m, u32 mlen) {
   int ret;
-
   MUST_HAVE(sig != NULL, ret, err);
-  MUST_HAVE(c != NULL, ret, err);
-
-  ret = generic_ec_verify(sig, siglen, pub_key, (const u8 *)(c->msg), c->msglen,
-                          c->sig_type, c->hash_type, c->adata, c->adata_len);
+  ret = ec_verify(sig, siglen, pub_key, m, mlen, DECDSA, SHA256, NULL, 0);
   if (ret) {
     ret = -1;
     goto err;
   }
+
+  ret = 0;
+err:
+  return ret;
+}
+
+ATTRIBUTE_WARN_UNUSED_RET static int ec_test_verify(u8 *sig, u8 siglen,
+                                                    const ec_pub_key *pub_key,
+                                                    const ec_test_case *c) {
+  return secp256r1_verify_signature(sig, siglen, pub_key, (const u8 *)(c->msg),
+                                    c->msglen);
+}
+
+ATTRIBUTE_WARN_UNUSED_RET static int secp256r1_sign_message(u8 *sig, u8 siglen,
+                                                            ec_key_pair *kp,
+                                                            const u8 *m,
+                                                            u32 mlen) {
+  int ret;
+
+  MUST_HAVE(sig != NULL, ret, err);
+  MUST_HAVE(kp != NULL, ret, err);
+  MUST_HAVE(m != NULL, ret, err);
+
+  ret =
+      generic_ec_sign(sig, siglen, kp, m, mlen, NULL, DECDSA, SHA256, NULL, 0);
+  EG(ret, err);
 
   ret = 0;
 err:
@@ -105,42 +131,22 @@ err:
  */
 ATTRIBUTE_WARN_UNUSED_RET static int
 ec_test_sign(u8 *sig, u8 siglen, ec_key_pair *kp, const ec_test_case *c) {
-  int ret;
-
-  MUST_HAVE(sig != NULL, ret, err);
-  MUST_HAVE(c != NULL, ret, err);
-
-  ret = generic_ec_sign(sig, siglen, kp, (const u8 *)(c->msg), c->msglen,
-                        c->nn_random, c->sig_type, c->hash_type, c->adata,
-                        c->adata_len);
-  EG(ret, err);
-
-  ret = 0;
-err:
-  return ret;
+  return secp256r1_sign_message(sig, siglen, kp, (const u8 *)(c->msg),
+                                c->msglen);
 }
 
-static int encode_error_value(const ec_test_case *c, test_err_kind failed_test,
-                              u32 *err_val) {
-  ec_curve_type ctype;
-  ec_alg_type stype = c->sig_type;
-  hash_alg_type htype = c->hash_type;
-  test_err_kind etype = failed_test;
-  int ret;
+// TODO: for some unknow reason params obtained here is wrong.
+ATTRIBUTE_WARN_UNUSED_RET ec_params secp256r1_get_params() { return EC_PARAMS; }
 
-  MUST_HAVE((c != NULL) && (err_val != NULL), ret, err);
-
-  ret = ec_get_curve_type_by_name(c->ec_str_p->name->buf,
-                                  c->ec_str_p->name->buflen, &ctype);
-  EG(ret, err);
-
-  *err_val = (((u32)ctype << 24) | ((u32)stype << 16) | ((u32)htype << 8) |
-              ((u32)etype));
-  ret = 0;
-
-err:
-  return ret;
-}
+// ATTRIBUTE_WARN_UNUSED_RET static int
+// secp256r1_recover_public_key_from_signature(ec_pub_key *pub_key1,
+//                                             ec_pub_key *pub_key2, const u8 *sig,
+//                                             u8 siglen, const u8 *hash,
+//                                             u8 hsize) {
+//   ec_params params = secp256r1_get_params();
+//   return __ecdsa_public_key_from_sig(pub_key1, pub_key2, &params, sig, siglen,
+//                                      hash, hsize, SIG_ALGO);
+// }
 
 /*
  * ECC generic self tests (sign/verify on known test vectors). Returns
@@ -150,7 +156,7 @@ err:
  */
 ATTRIBUTE_WARN_UNUSED_RET static int
 ec_sig_known_vector_tests_one(const ec_test_case *c) {
-  test_err_kind failed_test = TEST_KEY_IMPORT_ERROR;
+  test_err_kind failed_test = ERROR_KEY_IMPORT;
   u8 sig[EC_MAX_SIGLEN];
   ec_params params;
   ec_key_pair kp;
@@ -177,14 +183,14 @@ ec_sig_known_vector_tests_one(const ec_test_case *c) {
   ret = ec_key_pair_import_from_priv_key_buf(&kp, &params, c->priv_key,
                                              c->priv_key_len, c->sig_type);
   if (ret) {
-    failed_test = TEST_KEY_IMPORT_ERROR;
+    failed_test = ERROR_KEY_IMPORT;
     goto err;
   }
 
   siglen = c->exp_siglen;
   ret = ec_test_sign(sig, siglen, &kp, c);
   if (ret) {
-    failed_test = TEST_SIG_ERROR;
+    failed_test = ERROR_SIG;
     goto err;
   }
 
@@ -192,13 +198,13 @@ ec_sig_known_vector_tests_one(const ec_test_case *c) {
   EG(ret, err);
   if (!check) {
     ret = -1;
-    failed_test = TEST_SIG_COMP_ERROR;
+    failed_test = ERROR_SIG_COMP;
     goto err;
   }
 
   ret = ec_test_verify(sig, siglen, &(kp.pub_key), c);
   if (ret) {
-    failed_test = TEST_VERIF_ERROR;
+    failed_test = ERROR_VERIF;
     goto err;
   }
 
@@ -261,18 +267,19 @@ ec_sig_known_vector_tests_one(const ec_test_case *c) {
 
 err:
   if (ret) {
-    u32 ret_;
-    ret = encode_error_value(c, failed_test, &ret_);
-    EG(ret, err);
-    ret = (int)ret_;
+    ext_printf("%s failed: ret %d failed_test %d", __func__, ret, failed_test);
   }
-
   return ret;
 }
 
 int main() {
-  int ret = ec_sig_known_vector_tests_one(
+  int ret;
+  ret = import_params(&EC_PARAMS, &secp256r1_str_params);
+  EG(ret, err);
+  ret = ec_sig_known_vector_tests_one(
       &decdsa_rfc6979_SECP256R1_SHA256_0_test_case);
+  EG(ret, err);
+err:
   if (ret) {
     ext_printf("ECDSA failed: %d\n", ret);
   }
