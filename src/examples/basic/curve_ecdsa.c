@@ -82,30 +82,16 @@ static const ec_test_case decdsa_rfc6979_SECP256R1_SHA256_0_test_case = {
 ATTRIBUTE_WARN_UNUSED_RET static int ec_test_verify(u8 *sig, u8 siglen,
                                                     const ec_pub_key *pub_key,
                                                     const ec_test_case *c) {
-  /* If the algorithm supports streaming, we check that both the streaming and
-   * non streaming modes produce the same result.
-   */
-  int ret, check;
+  int ret;
 
   MUST_HAVE(sig != NULL, ret, err);
   MUST_HAVE(c != NULL, ret, err);
 
-  ret = ec_verify(sig, siglen, pub_key, (const u8 *)(c->msg), c->msglen,
-                  c->sig_type, c->hash_type, c->adata, c->adata_len);
+  ret = generic_ec_verify(sig, siglen, pub_key, (const u8 *)(c->msg), c->msglen,
+                          c->sig_type, c->hash_type, c->adata, c->adata_len);
   if (ret) {
     ret = -1;
     goto err;
-  }
-  ret = is_verify_streaming_mode_supported(c->sig_type, &check);
-  EG(ret, err);
-  if (check) {
-    ret =
-        generic_ec_verify(sig, siglen, pub_key, (const u8 *)(c->msg), c->msglen,
-                          c->sig_type, c->hash_type, c->adata, c->adata_len);
-    if (ret) {
-      ret = -1;
-      goto err;
-    }
   }
 
   ret = 0;
@@ -119,33 +105,15 @@ err:
  */
 ATTRIBUTE_WARN_UNUSED_RET static int
 ec_test_sign(u8 *sig, u8 siglen, ec_key_pair *kp, const ec_test_case *c) {
-  /* If the algorithm supports streaming, we check that both the streaming and
-   * non streaming modes produce the same result.
-   */
-  int ret, check;
+  int ret;
 
   MUST_HAVE(sig != NULL, ret, err);
   MUST_HAVE(c != NULL, ret, err);
 
-  ret = _ec_sign(sig, siglen, kp, (const u8 *)(c->msg), c->msglen, c->nn_random,
-                 c->sig_type, c->hash_type, c->adata, c->adata_len);
+  ret = generic_ec_sign(sig, siglen, kp, (const u8 *)(c->msg), c->msglen,
+                        c->nn_random, c->sig_type, c->hash_type, c->adata,
+                        c->adata_len);
   EG(ret, err);
-  ret = is_sign_streaming_mode_supported(c->sig_type, &check);
-  EG(ret, err);
-  if (check) {
-    u8 sig_tmp[EC_MAX_SIGLEN];
-    MUST_HAVE(siglen <= sizeof(sig_tmp), ret, err);
-    ret = generic_ec_sign(sig_tmp, siglen, kp, (const u8 *)(c->msg), c->msglen,
-                          c->nn_random, c->sig_type, c->hash_type, c->adata,
-                          c->adata_len);
-    EG(ret, err);
-    ret = are_equal(sig, sig_tmp, siglen, &check);
-    EG(ret, err);
-    if (!check) {
-      ret = -1;
-      goto err;
-    }
-  }
 
   ret = 0;
 err:
@@ -234,12 +202,10 @@ ec_sig_known_vector_tests_one(const ec_test_case *c) {
     goto err;
   }
 
-  check = 0;
-
   /* Try a public key recovery from the signature and the message.
    * This is only possible for ECDSA.
    */
-  if (check) {
+  {
     struct ec_sign_context sig_ctx;
     u8 digest[MAX_DIGEST_SIZE] = {0};
     u8 digestlen;
