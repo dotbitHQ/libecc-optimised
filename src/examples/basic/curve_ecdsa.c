@@ -1,3 +1,4 @@
+#include "lib_ecc_types.h"
 #include "libec.h"
 #include "libsig.h"
 
@@ -51,7 +52,9 @@ typedef enum {
 
 static const ec_alg_type SIG_ALGO = DECDSA;
 static const hash_alg_type HASH_ALGO = SHA256;
-static ec_params EC_PARAMS;
+// Use it directly, do not reassign it.
+// Otherwise there will be some unfathomable error.
+static ec_params SECP256R1_EC_PARAMS;
 
 static const u8 decdsa_rfc6979_SECP256R1_SHA256_0_test_vector_expected_sig[] = {
     0xef, 0xd4, 0x8b, 0x2a, 0xac, 0xb6, 0xa8, 0xfd, 0x11, 0x40, 0xdd,
@@ -135,18 +138,14 @@ ec_test_sign(u8 *sig, u8 siglen, ec_key_pair *kp, const ec_test_case *c) {
                                 c->msglen);
 }
 
-// TODO: for some unknow reason params obtained here is wrong.
-ATTRIBUTE_WARN_UNUSED_RET ec_params secp256r1_get_params() { return EC_PARAMS; }
-
-// ATTRIBUTE_WARN_UNUSED_RET static int
-// secp256r1_recover_public_key_from_signature(ec_pub_key *pub_key1,
-//                                             ec_pub_key *pub_key2, const u8 *sig,
-//                                             u8 siglen, const u8 *hash,
-//                                             u8 hsize) {
-//   ec_params params = secp256r1_get_params();
-//   return __ecdsa_public_key_from_sig(pub_key1, pub_key2, &params, sig, siglen,
-//                                      hash, hsize, SIG_ALGO);
-// }
+ATTRIBUTE_WARN_UNUSED_RET static int
+secp256r1_recover_public_key_from_signature(ec_pub_key *pub_key1,
+                                            ec_pub_key *pub_key2, const u8 *sig,
+                                            u8 siglen, const u8 *hash,
+                                            u8 hsize) {
+  return __ecdsa_public_key_from_sig(pub_key1, pub_key2, &SECP256R1_EC_PARAMS,
+                                     sig, siglen, hash, hsize, SIG_ALGO);
+}
 
 /*
  * ECC generic self tests (sign/verify on known test vectors). Returns
@@ -158,7 +157,6 @@ ATTRIBUTE_WARN_UNUSED_RET static int
 ec_sig_known_vector_tests_one(const ec_test_case *c) {
   test_err_kind failed_test = ERROR_KEY_IMPORT;
   u8 sig[EC_MAX_SIGLEN];
-  ec_params params;
   ec_key_pair kp;
   u8 siglen;
   int ret;
@@ -168,20 +166,12 @@ ec_sig_known_vector_tests_one(const ec_test_case *c) {
 
   ret = local_memset(&kp, 0, sizeof(kp));
   EG(ret, err);
-  ret = local_memset(&params, 0, sizeof(params));
-  EG(ret, err);
   ret = local_memset(sig, 0, sizeof(sig));
   EG(ret, err);
 
-  ret = import_params(&params, c->ec_str_p);
-  if (ret) {
-    ext_printf("Error importing params\n");
-    goto err;
-  }
-
   /* Regular import if not EdDSA */
-  ret = ec_key_pair_import_from_priv_key_buf(&kp, &params, c->priv_key,
-                                             c->priv_key_len, c->sig_type);
+  ret = ec_key_pair_import_from_priv_key_buf(
+      &kp, &SECP256R1_EC_PARAMS, c->priv_key, c->priv_key_len, c->sig_type);
   if (ret) {
     failed_test = ERROR_KEY_IMPORT;
     goto err;
@@ -217,7 +207,7 @@ ec_sig_known_vector_tests_one(const ec_test_case *c) {
     u8 digestlen;
     ec_pub_key pub_key1;
     ec_pub_key pub_key2;
-    nn_src_t cofactor = &(params.ec_gen_cofactor);
+    nn_src_t cofactor = &(SECP256R1_EC_PARAMS.ec_gen_cofactor);
     int cofactorisone;
     const u8 *input[2] = {(const u8 *)(c->msg), NULL};
     u32 ilens[2] = {c->msglen, 0};
@@ -236,8 +226,8 @@ ec_sig_known_vector_tests_one(const ec_test_case *c) {
     ret = nn_isone(cofactor, &cofactorisone);
     EG(ret, err);
     /* Compute the two possible public keys */
-    ret = __ecdsa_public_key_from_sig(&pub_key1, &pub_key2, &params, sig,
-                                      siglen, digest, digestlen, c->sig_type);
+    ret = secp256r1_recover_public_key_from_signature(
+        &pub_key1, &pub_key2, sig, siglen, digest, digestlen);
     if (ret) {
       ret = 0;
       check = -1;
@@ -274,7 +264,7 @@ err:
 
 int main() {
   int ret;
-  ret = import_params(&EC_PARAMS, &secp256r1_str_params);
+  ret = import_params(&SECP256R1_EC_PARAMS, &secp256r1_str_params);
   EG(ret, err);
   ret = ec_sig_known_vector_tests_one(
       &decdsa_rfc6979_SECP256R1_SHA256_0_test_case);
