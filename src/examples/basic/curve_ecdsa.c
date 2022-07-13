@@ -69,6 +69,19 @@ static const u8 decdsa_rfc6979_SECP256R1_SHA256_0_test_vector_priv_key[] = {
     0x57, 0x67, 0xb1, 0xd6, 0x93, 0x4e, 0x50, 0xc3, 0xdb, 0x36, 0xe8,
     0x9b, 0x12, 0x7b, 0x8a, 0x62, 0x2b, 0x12, 0x0f, 0x67, 0x21};
 
+static const u8 test_signature[] = {
+    0xd3, 0xf0, 0x2e, 0x8b, 0x5b, 0x44, 0x78, 0xed, 0x7a, 0xcd, 0x23,
+    0xec, 0x0b, 0x0e, 0x31, 0x34, 0xc4, 0x2c, 0x0c, 0x7e, 0x6d, 0xfa,
+    0x7c, 0xcf, 0xf0, 0xcc, 0xf0, 0xf2, 0xf6, 0x35, 0xfe, 0xe7, 0xd8,
+    0x6c, 0xb2, 0x49, 0x79, 0xe2, 0x2e, 0xc9, 0xfe, 0x45, 0x3f, 0x65,
+    0xf4, 0x6b, 0x29, 0x14, 0x42, 0x81, 0xe1, 0xff, 0x45, 0xbc, 0x31,
+    0x5a, 0x99, 0xdc, 0x4c, 0x09, 0x8d, 0x49, 0xd2, 0x40};
+
+static const u8 test_message[] = {
+    0xae, 0xc3, 0x66, 0x75, 0xe2, 0xb7, 0xb5, 0x5a, 0xd3, 0xc7, 0x5f,
+    0xc2, 0xb3, 0x0a, 0x18, 0x64, 0x35, 0x5a, 0xe0, 0x26, 0xff, 0x26,
+    0x1e, 0x9b, 0x00, 0x53, 0x11, 0xc9, 0xe4, 0x91, 0xc3, 0x26};
+
 static const ec_test_case decdsa_rfc6979_SECP256R1_SHA256_0_test_case = {
     .name = "DECDSA-SHA256/SECP256R1 0",
     .ec_str_p = &secp256r1_str_params,
@@ -86,11 +99,31 @@ static const ec_test_case decdsa_rfc6979_SECP256R1_SHA256_0_test_case = {
     .adata = NULL,
     .adata_len = 0};
 
+static const ec_test_case my_test_case = {
+    .name = "DECDSA-SHA256/SECP256R1 0",
+    .ec_str_p = &secp256r1_str_params,
+    .priv_key = decdsa_rfc6979_SECP256R1_SHA256_0_test_vector_priv_key,
+    .priv_key_len =
+        sizeof(decdsa_rfc6979_SECP256R1_SHA256_0_test_vector_priv_key),
+    .nn_random = NULL,
+    .hash_type = HASH_ALGO,
+    .msg = (const char *)test_message,
+    .msglen = 32,
+    .sig_type = SIG_ALGO,
+    .exp_sig = test_signature,
+    .exp_siglen = sizeof(test_signature),
+    .adata = NULL,
+    .adata_len = 0};
+
 ATTRIBUTE_WARN_UNUSED_RET static int
 secp256r1_verify_signature(u8 *sig, u8 siglen, const ec_pub_key *pub_key,
                            const u8 *m, u32 mlen) {
   int ret;
   MUST_HAVE(sig != NULL, ret, err);
+  ext_printf("siglen %d, mlen %d, sig_algo %d, hash_algo %d\n", siglen, mlen,
+             DECDSA, SHA256);
+  buf_print("signature", sig, siglen);
+  buf_print("message", m, mlen);
   ret = ec_verify(sig, siglen, pub_key, m, mlen, DECDSA, SHA256, NULL, 0);
   if (ret) {
     ret = -1;
@@ -158,6 +191,8 @@ ec_sig_known_vector_tests_one(const ec_test_case *c) {
   test_err_kind failed_test = ERROR_KEY_IMPORT;
   u8 sig[EC_MAX_SIGLEN];
   ec_key_pair kp;
+  const u8 buf_size = 64;
+  u8 temp_buf[buf_size];
   u8 siglen;
   int ret;
   int check = 0;
@@ -168,6 +203,8 @@ ec_sig_known_vector_tests_one(const ec_test_case *c) {
   EG(ret, err);
   ret = local_memset(sig, 0, sizeof(sig));
   EG(ret, err);
+  ret = local_memset(&temp_buf, 0, buf_size);
+  EG(ret, err);
 
   /* Regular import if not EdDSA */
   ret = ec_key_pair_import_from_priv_key_buf(
@@ -176,6 +213,17 @@ ec_sig_known_vector_tests_one(const ec_test_case *c) {
     failed_test = ERROR_KEY_IMPORT;
     goto err;
   }
+
+  pub_key_print("pub_key", &kp.pub_key);
+  priv_key_print("priv_key", &kp.priv_key);
+  ret = ec_pub_key_export_to_aff_buf(&kp.pub_key, (u8 *)&temp_buf, buf_size);
+  if (ret) {
+    ext_printf("export pub key affine failed %d", ret);
+    failed_test = ERROR_KEY_IMPORT;
+    goto err;
+  }
+  priv_key_print("priv_key", &kp.priv_key);
+  buf_print("public aff key", (u8 *)&temp_buf, buf_size);
 
   siglen = c->exp_siglen;
   ret = ec_test_sign(sig, siglen, &kp, c);
@@ -268,6 +316,8 @@ int main() {
   EG(ret, err);
   ret = ec_sig_known_vector_tests_one(
       &decdsa_rfc6979_SECP256R1_SHA256_0_test_case);
+  EG(ret, err);
+  ret = ec_sig_known_vector_tests_one(&my_test_case);
   EG(ret, err);
 err:
   if (ret) {
