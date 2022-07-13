@@ -1,6 +1,7 @@
 #include "lib_ecc_types.h"
 #include "libec.h"
 #include "libsig.h"
+#include "sig/ec_key.h"
 
 #include "print.h"
 #include "rand.h"
@@ -10,6 +11,10 @@
 typedef struct {
   /* Test case name */
   const char *name;
+
+  /* Private key */
+  const u8 *pub_key;
+  u8 pub_key_len;
 
   /* Private key */
   const u8 *priv_key;
@@ -25,9 +30,10 @@ typedef struct {
 
 typedef enum {
   ERROR_KEY_IMPORT = 1,
-  ERROR_SIG = 2,
-  ERROR_SIG_COMP = 3,
-  ERROR_VERIF = 4,
+  ERROR_KEY_EXPORT = 2,
+  ERROR_SIG = 3,
+  ERROR_SIG_COMP = 4,
+  ERROR_VERIF = 5,
 } test_err_kind;
 
 static const u8 EXP_SIGLEN = 64;
@@ -50,6 +56,14 @@ static const u8 decdsa_rfc6979_SECP256R1_SHA256_0_test_vector_priv_key[] = {
     0x57, 0x67, 0xb1, 0xd6, 0x93, 0x4e, 0x50, 0xc3, 0xdb, 0x36, 0xe8,
     0x9b, 0x12, 0x7b, 0x8a, 0x62, 0x2b, 0x12, 0x0f, 0x67, 0x21};
 
+static const u8 decdsa_rfc6979_SECP256R1_SHA256_0_test_vector_pub_key[] = {
+    0x60, 0xfe, 0xd4, 0xba, 0x25, 0x5a, 0x9d, 0x31, 0xc9, 0x61, 0xeb,
+    0x74, 0xc6, 0x35, 0x6d, 0x68, 0xc0, 0x49, 0xb8, 0x92, 0x3b, 0x61,
+    0xfa, 0x6c, 0xe6, 0x69, 0x62, 0x2e, 0x60, 0xf2, 0x9f, 0xb6, 0x79,
+    0x03, 0xfe, 0x10, 0x08, 0xb8, 0xbc, 0x99, 0xa4, 0x1a, 0xe9, 0xe9,
+    0x56, 0x28, 0xbc, 0x64, 0xf2, 0xf1, 0xb2, 0x0c, 0x2d, 0x7e, 0x9f,
+    0x51, 0x77, 0xa3, 0xc2, 0x94, 0xd4, 0x46, 0x22, 0x99};
+
 static const u8 test_signature[] = {
     0x68, 0x64, 0xf1, 0xf1, 0xfd, 0x70, 0xe8, 0x8d, 0x8e, 0x50, 0xed,
     0x17, 0xef, 0x8d, 0x78, 0x70, 0x15, 0xfa, 0x88, 0x3b, 0x0c, 0x34,
@@ -63,8 +77,24 @@ static const u8 test_message[] = {
     0x0c, 0x4d, 0x04, 0x99, 0xf2, 0xfa, 0x95, 0x68, 0x26, 0x62, 0x7d,
     0x4c, 0xcf, 0xed, 0x6a, 0x01, 0xfd, 0xb6, 0x08, 0x68, 0xf1};
 
+static const u8 test_priv_key[] = {
+    0xc9, 0xaf, 0xa9, 0xd8, 0x45, 0xba, 0x75, 0x16, 0x6b, 0x5c, 0x21,
+    0x57, 0x67, 0xb1, 0xd6, 0x93, 0x4e, 0x50, 0xc3, 0xdb, 0x36, 0xe8,
+    0x9b, 0x12, 0x7b, 0x8a, 0x62, 0x2b, 0x12, 0x0f, 0x67, 0x21};
+
+static const u8 test_pub_key[] = {
+    0x60, 0xfe, 0xd4, 0xba, 0x25, 0x5a, 0x9d, 0x31, 0xc9, 0x61, 0xeb,
+    0x74, 0xc6, 0x35, 0x6d, 0x68, 0xc0, 0x49, 0xb8, 0x92, 0x3b, 0x61,
+    0xfa, 0x6c, 0xe6, 0x69, 0x62, 0x2e, 0x60, 0xf2, 0x9f, 0xb6, 0x79,
+    0x03, 0xfe, 0x10, 0x08, 0xb8, 0xbc, 0x99, 0xa4, 0x1a, 0xe9, 0xe9,
+    0x56, 0x28, 0xbc, 0x64, 0xf2, 0xf1, 0xb2, 0x0c, 0x2d, 0x7e, 0x9f,
+    0x51, 0x77, 0xa3, 0xc2, 0x94, 0xd4, 0x46, 0x22, 0x99};
+
 static const ec_test_case decdsa_rfc6979_SECP256R1_SHA256_0_test_case = {
     .name = "DECDSA-SHA256/SECP256R1 0",
+    .pub_key = decdsa_rfc6979_SECP256R1_SHA256_0_test_vector_pub_key,
+    .pub_key_len =
+        sizeof(decdsa_rfc6979_SECP256R1_SHA256_0_test_vector_pub_key),
     .priv_key = decdsa_rfc6979_SECP256R1_SHA256_0_test_vector_priv_key,
     .priv_key_len =
         sizeof(decdsa_rfc6979_SECP256R1_SHA256_0_test_vector_priv_key),
@@ -75,22 +105,14 @@ static const ec_test_case decdsa_rfc6979_SECP256R1_SHA256_0_test_case = {
 
 static const ec_test_case my_test_case = {
     .name = "DECDSA-SHA256/SECP256R1 0",
-    .priv_key = decdsa_rfc6979_SECP256R1_SHA256_0_test_vector_priv_key,
-    .priv_key_len =
-        sizeof(decdsa_rfc6979_SECP256R1_SHA256_0_test_vector_priv_key),
+    .pub_key = test_pub_key,
+    .pub_key_len = sizeof(test_pub_key),
+    .priv_key = test_priv_key,
+    .priv_key_len = sizeof(test_priv_key),
     .msg = (const char *)test_message,
     .msglen = 32,
     .exp_sig = test_signature,
 };
-
-u8 hex_char_to_integer(char c) {
-  if (c >= '0' && c <= '9')
-    return c - '0';
-  else if (c >= 'A' && c <= 'F')
-    return 10 + c - 'A';
-  else
-    return 255;
-}
 
 ATTRIBUTE_WARN_UNUSED_RET static int
 secp256r1_get_key_pair_from_priv_key_buf(ec_key_pair *kp, const u8 *priv_key,
@@ -131,11 +153,11 @@ secp256r1_verify_signature(u8 *sig, u8 siglen, const ec_pub_key *pub_key,
   buf_print("message", m, mlen);
   ret = ec_verify(sig, siglen, pub_key, m, mlen, SIG_ALGO, HASH_ALGO, NULL, 0);
   if (ret) {
+    ext_printf("verification FAILED\n");
     ret = -1;
     goto err;
   }
 
-  ext_printf("verification succeeded\n");
   ret = 0;
 err:
   return ret;
@@ -151,6 +173,8 @@ ATTRIBUTE_WARN_UNUSED_RET static int
 ec_sig_known_vector_tests_one(const ec_test_case *c) {
   test_err_kind failed_test = ERROR_KEY_IMPORT;
   u8 sig[EC_MAX_SIGLEN];
+  const u8 buf_size = 64;
+  u8 temp_buf[buf_size];
   ec_key_pair kp;
   int ret;
   int check = 0;
@@ -169,8 +193,20 @@ ec_sig_known_vector_tests_one(const ec_test_case *c) {
     goto err;
   }
 
-  pub_key_print("pub_key", &kp.pub_key);
-  priv_key_print("priv_key", &kp.priv_key);
+  // Dump information
+  {
+    pub_key_print("pub_key", &kp.pub_key);
+    priv_key_print("priv_key", &kp.priv_key);
+    if (ec_pub_key_export_to_aff_buf(&kp.pub_key, temp_buf, buf_size)) {
+      ext_printf("exporting public key to buffer FAILED");
+      failed_test = ERROR_KEY_EXPORT;
+      goto err;
+    }
+    buf_print("exported public key", temp_buf, buf_size);
+    if (c->pub_key) {
+      buf_print("expected public key", c->pub_key, c->pub_key_len);
+    }
+  }
 
   ret = secp256r1_sign_message(sig, EXP_SIGLEN, &kp,
                                (const unsigned char *)c->msg, c->msglen);
@@ -194,6 +230,24 @@ ec_sig_known_vector_tests_one(const ec_test_case *c) {
     goto err;
   }
 
+  // ALso verify signature from specified public key
+  if (c->pub_key) {
+    ext_printf("Verifying with specified public key\n");
+    ec_pub_key pk;
+    if (ec_pub_key_import_from_aff_buf(&pk, &SECP256R1_EC_PARAMS, c->pub_key,
+                                       c->pub_key_len, SIG_ALGO)) {
+      ext_printf("importing public key from buffer FAILED\n");
+      failed_test = ERROR_KEY_IMPORT;
+      goto err;
+    }
+    if (secp256r1_verify_signature(sig, EXP_SIGLEN, &pk,
+                                   (const unsigned char *)c->msg, c->msglen)) {
+      ext_printf("verifying signature with fixed public key FAILED\n");
+      failed_test = ERROR_VERIF;
+      goto err;
+    }
+  }
+
   ret = 0;
 
 err:
@@ -214,7 +268,7 @@ int main() {
   EG(ret, err);
 err:
   if (ret) {
-    ext_printf("ECDSA failed: %d\n", ret);
+    ext_printf("ECDSA FAILED: %d\n", ret);
   }
   return ret;
 }
