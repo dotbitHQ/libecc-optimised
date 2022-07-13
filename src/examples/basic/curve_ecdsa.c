@@ -2,43 +2,25 @@
 #include "libec.h"
 #include "libsig.h"
 
-/* We include the printf external dependency for printf output */
 #include "print.h"
-/* We include the time external dependency for performance measurement */
-#include "time.h"
-
 #include "rand.h"
+#include "time.h"
 
 /* A test is fully defined by the attributes pointed in this structure. */
 typedef struct {
   /* Test case name */
   const char *name;
 
-  /* Curve params */
-  const ec_str_params *ec_str_p;
-
   /* Private key */
   const u8 *priv_key;
   u8 priv_key_len;
-
-  /* Function returning a fixed random value */
-  int (*nn_random)(nn_t out, nn_src_t q);
-
-  /* Hash function */
-  hash_alg_type hash_type;
 
   /* Message */
   const char *msg;
   u32 msglen;
 
-  /* Expected signature and associated length */
-  ec_alg_type sig_type;
+  /* Expected signature */
   const u8 *exp_sig;
-  u8 exp_siglen;
-
-  /* Optional ancillary data */
-  const u8 *adata;
-  u16 adata_len;
 } ec_test_case;
 
 typedef enum {
@@ -46,10 +28,9 @@ typedef enum {
   ERROR_SIG = 2,
   ERROR_SIG_COMP = 3,
   ERROR_VERIF = 4,
-  ERROR_ECDH = 5,
-  ERROR_ECDH_COMP = 6,
 } test_err_kind;
 
+static const u8 EXP_SIGLEN = 64;
 static const ec_alg_type SIG_ALGO = DECDSA;
 static const hash_alg_type HASH_ALGO = SHA256;
 // Use it directly, do not reassign it.
@@ -70,76 +51,52 @@ static const u8 decdsa_rfc6979_SECP256R1_SHA256_0_test_vector_priv_key[] = {
     0x9b, 0x12, 0x7b, 0x8a, 0x62, 0x2b, 0x12, 0x0f, 0x67, 0x21};
 
 static const u8 test_signature[] = {
-    0xd3, 0xf0, 0x2e, 0x8b, 0x5b, 0x44, 0x78, 0xed, 0x7a, 0xcd, 0x23,
-    0xec, 0x0b, 0x0e, 0x31, 0x34, 0xc4, 0x2c, 0x0c, 0x7e, 0x6d, 0xfa,
-    0x7c, 0xcf, 0xf0, 0xcc, 0xf0, 0xf2, 0xf6, 0x35, 0xfe, 0xe7, 0xd8,
-    0x6c, 0xb2, 0x49, 0x79, 0xe2, 0x2e, 0xc9, 0xfe, 0x45, 0x3f, 0x65,
-    0xf4, 0x6b, 0x29, 0x14, 0x42, 0x81, 0xe1, 0xff, 0x45, 0xbc, 0x31,
-    0x5a, 0x99, 0xdc, 0x4c, 0x09, 0x8d, 0x49, 0xd2, 0x40};
+    0x68, 0x64, 0xf1, 0xf1, 0xfd, 0x70, 0xe8, 0x8d, 0x8e, 0x50, 0xed,
+    0x17, 0xef, 0x8d, 0x78, 0x70, 0x15, 0xfa, 0x88, 0x3b, 0x0c, 0x34,
+    0x2e, 0xfc, 0x36, 0xd6, 0x71, 0x48, 0xc2, 0x0f, 0x41, 0x8a, 0x38,
+    0x91, 0x76, 0xba, 0x62, 0x24, 0xe2, 0x31, 0xb6, 0xa6, 0xa1, 0x3b,
+    0x1c, 0xe5, 0x8a, 0x06, 0xca, 0xa7, 0x58, 0x58, 0xd1, 0x9f, 0x3e,
+    0x68, 0xe8, 0x79, 0x0d, 0x67, 0x61, 0x7e, 0xc4, 0xe2};
 
 static const u8 test_message[] = {
-    0xae, 0xc3, 0x66, 0x75, 0xe2, 0xb7, 0xb5, 0x5a, 0xd3, 0xc7, 0x5f,
-    0xc2, 0xb3, 0x0a, 0x18, 0x64, 0x35, 0x5a, 0xe0, 0x26, 0xff, 0x26,
-    0x1e, 0x9b, 0x00, 0x53, 0x11, 0xc9, 0xe4, 0x91, 0xc3, 0x26};
+    0xf5, 0x5c, 0x2b, 0xdb, 0xac, 0x3e, 0x84, 0x03, 0x72, 0x28, 0xc3,
+    0x0c, 0x4d, 0x04, 0x99, 0xf2, 0xfa, 0x95, 0x68, 0x26, 0x62, 0x7d,
+    0x4c, 0xcf, 0xed, 0x6a, 0x01, 0xfd, 0xb6, 0x08, 0x68, 0xf1};
 
 static const ec_test_case decdsa_rfc6979_SECP256R1_SHA256_0_test_case = {
     .name = "DECDSA-SHA256/SECP256R1 0",
-    .ec_str_p = &secp256r1_str_params,
     .priv_key = decdsa_rfc6979_SECP256R1_SHA256_0_test_vector_priv_key,
     .priv_key_len =
         sizeof(decdsa_rfc6979_SECP256R1_SHA256_0_test_vector_priv_key),
-    .nn_random = NULL,
-    .hash_type = HASH_ALGO,
     .msg = "sample",
     .msglen = 6,
-    .sig_type = SIG_ALGO,
     .exp_sig = decdsa_rfc6979_SECP256R1_SHA256_0_test_vector_expected_sig,
-    .exp_siglen =
-        sizeof(decdsa_rfc6979_SECP256R1_SHA256_0_test_vector_expected_sig),
-    .adata = NULL,
-    .adata_len = 0};
+};
 
 static const ec_test_case my_test_case = {
     .name = "DECDSA-SHA256/SECP256R1 0",
-    .ec_str_p = &secp256r1_str_params,
     .priv_key = decdsa_rfc6979_SECP256R1_SHA256_0_test_vector_priv_key,
     .priv_key_len =
         sizeof(decdsa_rfc6979_SECP256R1_SHA256_0_test_vector_priv_key),
-    .nn_random = NULL,
-    .hash_type = HASH_ALGO,
     .msg = (const char *)test_message,
     .msglen = 32,
-    .sig_type = SIG_ALGO,
     .exp_sig = test_signature,
-    .exp_siglen = sizeof(test_signature),
-    .adata = NULL,
-    .adata_len = 0};
+};
 
-ATTRIBUTE_WARN_UNUSED_RET static int
-secp256r1_verify_signature(u8 *sig, u8 siglen, const ec_pub_key *pub_key,
-                           const u8 *m, u32 mlen) {
-  int ret;
-  MUST_HAVE(sig != NULL, ret, err);
-  ext_printf("siglen %d, mlen %d, sig_algo %d, hash_algo %d\n", siglen, mlen,
-             DECDSA, SHA256);
-  buf_print("signature", sig, siglen);
-  buf_print("message", m, mlen);
-  ret = ec_verify(sig, siglen, pub_key, m, mlen, DECDSA, SHA256, NULL, 0);
-  if (ret) {
-    ret = -1;
-    goto err;
-  }
-
-  ret = 0;
-err:
-  return ret;
+u8 hex_char_to_integer(char c) {
+  if (c >= '0' && c <= '9')
+    return c - '0';
+  else if (c >= 'A' && c <= 'F')
+    return 10 + c - 'A';
+  else
+    return 255;
 }
 
-ATTRIBUTE_WARN_UNUSED_RET static int ec_test_verify(u8 *sig, u8 siglen,
-                                                    const ec_pub_key *pub_key,
-                                                    const ec_test_case *c) {
-  return secp256r1_verify_signature(sig, siglen, pub_key, (const u8 *)(c->msg),
-                                    c->msglen);
+ATTRIBUTE_WARN_UNUSED_RET static int
+secp256r1_get_key_pair_from_priv_key_buf(ec_key_pair *kp, const u8 *priv_key,
+                                         u8 priv_key_len) {
+  return ec_key_pair_import_from_priv_key_buf(kp, &SECP256R1_EC_PARAMS,
+                                              priv_key, priv_key_len, SIG_ALGO);
 }
 
 ATTRIBUTE_WARN_UNUSED_RET static int secp256r1_sign_message(u8 *sig, u8 siglen,
@@ -152,8 +109,8 @@ ATTRIBUTE_WARN_UNUSED_RET static int secp256r1_sign_message(u8 *sig, u8 siglen,
   MUST_HAVE(kp != NULL, ret, err);
   MUST_HAVE(m != NULL, ret, err);
 
-  ret =
-      generic_ec_sign(sig, siglen, kp, m, mlen, NULL, DECDSA, SHA256, NULL, 0);
+  ret = generic_ec_sign(sig, siglen, kp, m, mlen, NULL, SIG_ALGO, HASH_ALGO,
+                        NULL, 0);
   EG(ret, err);
 
   ret = 0;
@@ -161,23 +118,27 @@ err:
   return ret;
 }
 
-/*
- * Those functions respectively perform signature and verification tests
- * based the content of a given test case.
- */
 ATTRIBUTE_WARN_UNUSED_RET static int
-ec_test_sign(u8 *sig, u8 siglen, ec_key_pair *kp, const ec_test_case *c) {
-  return secp256r1_sign_message(sig, siglen, kp, (const u8 *)(c->msg),
-                                c->msglen);
-}
+secp256r1_verify_signature(u8 *sig, u8 siglen, const ec_pub_key *pub_key,
+                           const u8 *m, u32 mlen) {
+  int ret;
+  MUST_HAVE(sig != NULL, ret, err);
+  MUST_HAVE(pub_key != NULL, ret, err);
+  MUST_HAVE(m != NULL, ret, err);
+  ext_printf("siglen %d, mlen %d, sig_algo %d, hash_algo %d\n", siglen, mlen,
+             SIG_ALGO, HASH_ALGO);
+  buf_print("signature", sig, siglen);
+  buf_print("message", m, mlen);
+  ret = ec_verify(sig, siglen, pub_key, m, mlen, SIG_ALGO, HASH_ALGO, NULL, 0);
+  if (ret) {
+    ret = -1;
+    goto err;
+  }
 
-ATTRIBUTE_WARN_UNUSED_RET static int
-secp256r1_recover_public_key_from_signature(ec_pub_key *pub_key1,
-                                            ec_pub_key *pub_key2, const u8 *sig,
-                                            u8 siglen, const u8 *hash,
-                                            u8 hsize) {
-  return __ecdsa_public_key_from_sig(pub_key1, pub_key2, &SECP256R1_EC_PARAMS,
-                                     sig, siglen, hash, hsize, SIG_ALGO);
+  ext_printf("verification succeeded\n");
+  ret = 0;
+err:
+  return ret;
 }
 
 /*
@@ -191,9 +152,6 @@ ec_sig_known_vector_tests_one(const ec_test_case *c) {
   test_err_kind failed_test = ERROR_KEY_IMPORT;
   u8 sig[EC_MAX_SIGLEN];
   ec_key_pair kp;
-  const u8 buf_size = 64;
-  u8 temp_buf[buf_size];
-  u8 siglen;
   int ret;
   int check = 0;
 
@@ -203,12 +161,9 @@ ec_sig_known_vector_tests_one(const ec_test_case *c) {
   EG(ret, err);
   ret = local_memset(sig, 0, sizeof(sig));
   EG(ret, err);
-  ret = local_memset(&temp_buf, 0, buf_size);
-  EG(ret, err);
 
-  /* Regular import if not EdDSA */
-  ret = ec_key_pair_import_from_priv_key_buf(
-      &kp, &SECP256R1_EC_PARAMS, c->priv_key, c->priv_key_len, c->sig_type);
+  ret = secp256r1_get_key_pair_from_priv_key_buf(&kp, c->priv_key,
+                                                 c->priv_key_len);
   if (ret) {
     failed_test = ERROR_KEY_IMPORT;
     goto err;
@@ -216,23 +171,15 @@ ec_sig_known_vector_tests_one(const ec_test_case *c) {
 
   pub_key_print("pub_key", &kp.pub_key);
   priv_key_print("priv_key", &kp.priv_key);
-  ret = ec_pub_key_export_to_aff_buf(&kp.pub_key, (u8 *)&temp_buf, buf_size);
-  if (ret) {
-    ext_printf("export pub key affine failed %d", ret);
-    failed_test = ERROR_KEY_IMPORT;
-    goto err;
-  }
-  priv_key_print("priv_key", &kp.priv_key);
-  buf_print("public aff key", (u8 *)&temp_buf, buf_size);
 
-  siglen = c->exp_siglen;
-  ret = ec_test_sign(sig, siglen, &kp, c);
+  ret = secp256r1_sign_message(sig, EXP_SIGLEN, &kp,
+                               (const unsigned char *)c->msg, c->msglen);
   if (ret) {
     failed_test = ERROR_SIG;
     goto err;
   }
 
-  ret = are_equal(sig, c->exp_sig, siglen, &check);
+  ret = are_equal(sig, c->exp_sig, EXP_SIGLEN, &check);
   EG(ret, err);
   if (!check) {
     ret = -1;
@@ -240,67 +187,13 @@ ec_sig_known_vector_tests_one(const ec_test_case *c) {
     goto err;
   }
 
-  ret = ec_test_verify(sig, siglen, &(kp.pub_key), c);
+  ret = secp256r1_verify_signature(sig, EXP_SIGLEN, &(kp.pub_key),
+                                   (const unsigned char *)c->msg, c->msglen);
   if (ret) {
     failed_test = ERROR_VERIF;
     goto err;
   }
 
-  /* Try a public key recovery from the signature and the message.
-   * This is only possible for ECDSA.
-   */
-  {
-    struct ec_sign_context sig_ctx;
-    u8 digest[MAX_DIGEST_SIZE] = {0};
-    u8 digestlen;
-    ec_pub_key pub_key1;
-    ec_pub_key pub_key2;
-    nn_src_t cofactor = &(SECP256R1_EC_PARAMS.ec_gen_cofactor);
-    int cofactorisone;
-    const u8 *input[2] = {(const u8 *)(c->msg), NULL};
-    u32 ilens[2] = {c->msglen, 0};
-    /* Initialize our signature context only for the hash */
-    ret = ec_sign_init(&sig_ctx, &kp, c->sig_type, c->hash_type, c->adata,
-                       c->adata_len);
-    EG(ret, err);
-    /* Perform the hash of the data ourselves */
-    ret = hash_mapping_callbacks_sanity_check(sig_ctx.h);
-    EG(ret, err);
-    ret = sig_ctx.h->hfunc_scattered(input, ilens, digest);
-    EG(ret, err);
-    digestlen = sig_ctx.h->digest_size;
-    MUST_HAVE(digestlen <= sizeof(digest), ret, err);
-    /* Check the cofactor */
-    ret = nn_isone(cofactor, &cofactorisone);
-    EG(ret, err);
-    /* Compute the two possible public keys */
-    ret = secp256r1_recover_public_key_from_signature(
-        &pub_key1, &pub_key2, sig, siglen, digest, digestlen);
-    if (ret) {
-      ret = 0;
-      check = -1;
-      goto pubkey_recovery_warning;
-    }
-    /* Check equality with one of the two keys */
-    ret = prj_pt_cmp(&(pub_key1.y), &(kp.pub_key.y), &check);
-    EG(ret, err);
-    if (check) {
-      ret = prj_pt_cmp(&(pub_key2.y), &(kp.pub_key.y), &check);
-      EG(ret, err);
-    }
-  pubkey_recovery_warning:
-    if (check && cofactorisone) {
-      ext_printf("[~] Warning: ECDSA recovered public key differs from "
-                 "real one ...");
-      ext_printf("This can happen with very low probability. Please check "
-                 "the trace:\n");
-      pub_key_print("pub_key1", &pub_key1);
-      pub_key_print("pub_key2", &pub_key2);
-      pub_key_print("pub_key", &(kp.pub_key));
-      buf_print("digest", digest, digestlen);
-      buf_print("sig", sig, siglen);
-    }
-  }
   ret = 0;
 
 err:
