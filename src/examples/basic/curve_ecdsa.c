@@ -29,11 +29,13 @@ typedef struct {
 } ec_test_case;
 
 typedef enum {
-  ERROR_KEY_IMPORT = 1,
-  ERROR_KEY_EXPORT = 2,
-  ERROR_SIG = 3,
-  ERROR_SIG_COMP = 4,
-  ERROR_VERIF = 5,
+  ERROR_UNREACHABLE = 1,
+  ERROR_OTHER = 2,
+  ERROR_KEY_IMPORT = 3,
+  ERROR_KEY_EXPORT = 4,
+  ERROR_SIG = 5,
+  ERROR_SIG_COMP = 6,
+  ERROR_VERIF = 7,
 } test_err_kind;
 
 static const u8 EXP_SIGLEN = 64;
@@ -171,7 +173,6 @@ err:
  */
 ATTRIBUTE_WARN_UNUSED_RET static int
 ec_sig_known_vector_tests_one(const ec_test_case *c) {
-  test_err_kind failed_test = ERROR_KEY_IMPORT;
   u8 sig[EC_MAX_SIGLEN];
   const u8 buf_size = 64;
   u8 temp_buf[buf_size];
@@ -189,7 +190,7 @@ ec_sig_known_vector_tests_one(const ec_test_case *c) {
   ret = secp256r1_get_key_pair_from_priv_key_buf(&kp, c->priv_key,
                                                  c->priv_key_len);
   if (ret) {
-    failed_test = ERROR_KEY_IMPORT;
+    ret = ERROR_KEY_IMPORT;
     goto err;
   }
 
@@ -199,7 +200,7 @@ ec_sig_known_vector_tests_one(const ec_test_case *c) {
     priv_key_print("priv_key", &kp.priv_key);
     if (ec_pub_key_export_to_aff_buf(&kp.pub_key, temp_buf, buf_size)) {
       ext_printf("exporting public key to buffer FAILED");
-      failed_test = ERROR_KEY_EXPORT;
+      ret = ERROR_KEY_EXPORT;
       goto err;
     }
     buf_print("exported public key", temp_buf, buf_size);
@@ -211,22 +212,21 @@ ec_sig_known_vector_tests_one(const ec_test_case *c) {
   ret = secp256r1_sign_message(sig, EXP_SIGLEN, &kp,
                                (const unsigned char *)c->msg, c->msglen);
   if (ret) {
-    failed_test = ERROR_SIG;
+    ret = ERROR_SIG;
     goto err;
   }
 
   ret = are_equal(sig, c->exp_sig, EXP_SIGLEN, &check);
   EG(ret, err);
   if (!check) {
-    ret = -1;
-    failed_test = ERROR_SIG_COMP;
+    ret = ERROR_SIG_COMP;
     goto err;
   }
 
   ret = secp256r1_verify_signature(sig, EXP_SIGLEN, &(kp.pub_key),
                                    (const unsigned char *)c->msg, c->msglen);
   if (ret) {
-    failed_test = ERROR_VERIF;
+    ret = ERROR_VERIF;
     goto err;
   }
 
@@ -237,14 +237,42 @@ ec_sig_known_vector_tests_one(const ec_test_case *c) {
     if (ec_pub_key_import_from_aff_buf(&pk, &SECP256R1_EC_PARAMS, c->pub_key,
                                        c->pub_key_len, SIG_ALGO)) {
       ext_printf("importing public key from buffer FAILED\n");
-      failed_test = ERROR_KEY_IMPORT;
+      ret = ERROR_KEY_IMPORT;
       goto err;
     }
     if (secp256r1_verify_signature(sig, EXP_SIGLEN, &pk,
                                    (const unsigned char *)c->msg, c->msglen)) {
       ext_printf("verifying signature with fixed public key FAILED\n");
-      failed_test = ERROR_VERIF;
+      ret = ERROR_VERIF;
       goto err;
+    }
+
+    // Export and import public key and then run verification once more
+    {
+      const u8 buf_size = 64;
+      u8 temp_buf[buf_size];
+      int r = local_memset(&temp_buf, 0, sizeof(temp_buf));
+      if (r) {
+        ret = ERROR_OTHER;
+        goto err;
+      }
+      if (ec_pub_key_export_to_aff_buf(&pk, temp_buf, buf_size)) {
+        ext_printf("Exporting public key to buffer FAILED\n");
+        ret = ERROR_OTHER;
+        goto err;
+      }
+      if (ec_pub_key_import_from_aff_buf(&pk, &SECP256R1_EC_PARAMS, c->pub_key,
+                                         c->pub_key_len, SIG_ALGO)) {
+        ext_printf("importing public key from buffer FAILED\n");
+        ret = ERROR_KEY_IMPORT;
+        goto err;
+      }
+      if (secp256r1_verify_signature(
+              sig, EXP_SIGLEN, &pk, (const unsigned char *)c->msg, c->msglen)) {
+        ext_printf("verifying signature with fixed public key FAILED\n");
+        ret = ERROR_VERIF;
+        goto err;
+      }
     }
   }
 
@@ -252,7 +280,7 @@ ec_sig_known_vector_tests_one(const ec_test_case *c) {
 
 err:
   if (ret) {
-    ext_printf("%s failed: ret %d failed_test %d", __func__, ret, failed_test);
+    ext_printf("%s failed: ret %d", __func__, ret);
   }
   return ret;
 }
