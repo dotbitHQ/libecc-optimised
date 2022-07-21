@@ -97,11 +97,9 @@ err:
  * Verify signature data
  */
 static int verify_signature() {
-  struct ec_verify_context verif_ctx;
   const ec_str_params *ec_str_p;
   ec_sig_alg_type sig_type;
   hash_alg_type hash_type;
-  u8 siglen;
   ec_pub_key pub_key;
   ec_params params;
   int ret;
@@ -119,19 +117,6 @@ static int verify_signature() {
   /* Import the parameters */
   import_params(&params, ec_str_p);
 
-  ret = ec_get_sig_len(&params, sig_type, hash_type, &siglen);
-  if (ret) {
-    printf("Error getting effective signature length from %s\n",
-           (const char *)(ec_str_p->name->buf));
-    goto err;
-  }
-
-  if (siglen != sizeof(sig_buf)) {
-    printf("Effective signature length mismatch %s\n",
-           (const char *)(ec_str_p->name->buf));
-    goto err;
-  }
-
   ret = ec_structured_pub_key_import_from_buf(&pub_key, &params, pub_key_buf,
                                               sizeof(pub_key_buf), sig_type);
   if (ret) {
@@ -139,24 +124,10 @@ static int verify_signature() {
     goto err;
   }
 
-  siglen = sizeof(sig_buf);
+  ret = ec_verify(sig_buf, sizeof(sig_buf), &pub_key, msg_buf,  sizeof(msg_buf), sig_type,  hash_type);
 
-  ret = ec_verify_init(&verif_ctx, &pub_key, sig_buf, siglen, sig_type,
-                       hash_type);
   if (ret) {
-    printf("Error: error when initiating signature verification\n");
-    goto err;
-  }
-
-  ret = ec_verify_update(&verif_ctx, msg_buf, sizeof(msg_buf));
-  if (ret) {
-    printf("Error: error when updating signature verification\n");
-    goto err;
-  }
-
-  ret = ec_verify_finalize(&verif_ctx);
-  if (ret) {
-    printf("Error: error when finalizing signature verification\n");
+    printf("Error: error while verifying signature\n");
     goto err;
   }
 
