@@ -51,6 +51,7 @@ static int ATTRIBUTE_UNUSED __nn_is_wlen_consistent(nn_src_t A)
  */
 void nn_check_initialized(nn_src_t A)
 {
+  return;
 	MUST_HAVE((A != NULL) && (A->magic == NN_MAGIC) &&
 		  (A->wlen <= NN_MAX_WORD_LEN));
 	SHOULD_HAVE(__nn_is_wlen_consistent(A));
@@ -122,6 +123,9 @@ void nn_uninit(nn_t A)
  */
 void nn_cnd_swap(int cnd, nn_t in1, nn_t in2)
 {
+  if (!cnd) {
+    return;
+  }
 	word_t mask = WORD_MASK_IFNOTZERO(cnd);
 	u8 len, i;
 	word_t t;
@@ -159,6 +163,9 @@ void nn_set_wlen(nn_t A, u8 new_wlen)
 	nn_check_initialized(A);
 	MUST_HAVE(new_wlen <= NN_MAX_WORD_LEN);
 	MUST_HAVE(A->wlen <= NN_MAX_WORD_LEN);
+  if (A->wlen == new_wlen) {
+    return;
+  }
 
         /* Trimming performed in constant time */
         for (i = 0; i < NN_MAX_WORD_LEN; i++) {
