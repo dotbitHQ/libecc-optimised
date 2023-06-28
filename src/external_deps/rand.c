@@ -13,20 +13,21 @@
  *  This software is licensed under a dual BSD and GPL v2 license.
  *  See LICENSE file at the root folder of the project.
  */
+#define CKB_DECLARATION_ONLY
 #include "rand.h"
 
 /* Unix and compatible case (including macOS) */
 #if defined(WITH_STDLIB) && (defined(__unix__) || defined(__APPLE__))
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <limits.h>
-
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include "../words/words.h"
+//#include <stdio.h>
+//#include <stdlib.h>
+//#include <string.h>
+//#include <limits.h>
+//
+//#include <sys/types.h>
+//#include <sys/stat.h>
+//#include <fcntl.h>
+//#include <unistd.h>
+//#include "../words/words.h"
 
 /*
  * Copy file content to buffer. Return 0 on success, i.e. if the request

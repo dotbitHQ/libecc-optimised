@@ -18,23 +18,23 @@
 
 /* Unix and compatible case (including macOS) */
 #if defined(WITH_STDLIB) && (defined(__unix__) || defined(__APPLE__))
-#include <stddef.h>
-#include <sys/time.h>
+//#include <stddef.h>
+//#include <sys/time.h>
 
 int get_ms_time(u64 *time)
 {
-	struct timeval tv;
-	int ret;
-
-	ret = gettimeofday(&tv, NULL);
-	if (ret < 0) {
-		goto err;
-	}
-	*time = (u64)(((tv.tv_sec) * 1000) + ((tv.tv_usec) / 1000));
-
-	return 0;
- err:
-	return -1;
+//	struct timeval tv;
+//	int ret;
+//
+//	ret = gettimeofday(&tv, NULL);
+//	if (ret < 0) {
+//		goto err;
+//	}
+//	*time = (u64)(((tv.tv_sec) * 1000) + ((tv.tv_usec) / 1000));
+//
+//	return 0;
+// err:
+//	return -1;
 }
 
 /* Windows case */
