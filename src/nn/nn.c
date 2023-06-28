@@ -51,7 +51,6 @@ static int ATTRIBUTE_UNUSED __nn_is_wlen_consistent(nn_src_t A)
  */
 __attribute__((always_inline)) inline void nn_check_initialized(nn_src_t A)
 {
-  return;
 	MUST_HAVE((A != NULL) && (A->magic == NN_MAGIC) &&
 		  (A->wlen <= NN_MAX_WORD_LEN));
 	SHOULD_HAVE(__nn_is_wlen_consistent(A));

@@ -107,7 +107,7 @@ static void _nn_mul_redc1(nn_t out, nn_src_t in1, nn_src_t in2, nn_src_t p,
 
 static void my_nn_mul_redc1(nn_t out, nn_src_t in1, nn_src_t in2, nn_src_t p,
 			  word_t mpinv) {
-  nn_set_wlen(out, p->wlen);
+  nn_init(out, 32);
   ll_u256_mont_mul(out->val, in1->val, in2->val, p->val, mpinv);
 }
 
